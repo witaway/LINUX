@@ -1,0 +1,669 @@
+![[Lab07_linux.pdf]]
+
+---
+
+# Шаг 0. Перед выполнением основного задания
+
+## 1. Базовая настройка системы
+
+Выполнить настройку виртуальных сетевых адаптеров и брандмауэра [[Lab 6 - Настройка OpenSSH и терминальные сервисы#Шаг 0. Первоначальная настройка|аналогично лабораторной работе 6]].
+
+## 2. Установка Apache + PHP
+
+Для начала, установим нужные нам пакеты:
+
+```bash
+sudo pacman -S apache php 
+```
+
+Включим демона Apache:
+
+```bash
+sudo systemctl enable httpd
+sudo systemctl start httpd
+```
+
+## 3. Настройка PHP
+
+Для настройки PHP на Apache-сервере, [воспользуемся страничкой с инструкцией](https://wiki.archlinux.org/title/Apache_HTTP_Server#Using_libphp) из вики.
+
+Установим `libphp`:
+
+```bash
+sudo pacman -S php-apache
+```
+
+И отредактируем `/etc/httpd/conf/httpd.conf` - главный конфигурационный файл Apache:
+1. Закомментируем строку `#LoadModule mpm_event_module modules/mod_mpm_event.so`
+2. Раскомментируем строку `LoadModule mpm_prefork_module modules/mod_mpm_prefork.so`
+3. Добавим следующие строки в конце списка загружаемых модулей (после последней директивы `LoadModule`):
+	```
+	LoadModule php_module modules/libphp.so
+	AddHandler php-script .php
+	```
+1. Добавим следующую строку после последней директивы `Include`: `Include conf/extra/php_module.conf`
+
+И перезагрузим веб-сервер:
+
+```bash
+sudo systemctl restart httpd
+```
+
+## 4. Дадим себе права на запись в `/srv/http`
+
+Посмотрим, кто владеет искомой директорией:
+
+![[Pasted image 20240115205733.png | center | 800]]
+
+Ага. Это `root`. Из чего следует, что мы не сможем ничего туда записывать. И Munin тем более.
+
+Сменим владельца на, допустим, группу `http` (присутствует в моей системе с момента установки Apache):
+
+```bash
+sudo chown -R http:http /srv/http
+```
+
+Настроим доступ к директории:
+
+```bash
+# 7 - allow read/write/execute for owner
+# 7 - allow read/write/execute for group
+# 0 - no permissions for other users
+sudo chmod -R 770 /srv/http
+```
+
+И добавим себя в группу `http`:
+
+```bash
+sudo usermod -a -G http user
+```
+
+Просмотреть список существующих в системе групп можно следующим образом:
+
+```bash
+cat /etc/group
+```
+
+А, в случае необходимости, создать группу, можно так:
+
+```bash
+sudo groupadd group_name 
+```
+
+После этих мунипуляций, перелогинимся (или перезагрузимся), поскольку настройки групп применяются только после повторного входа в систему.
+
+![[Pasted image 20240115211404.png | center | 800]]
+
+## 5. Выделим виртуальные хосты
+
+Превентивно выделим два виртуальных хоста: один для Munin (`munin.example.com`), другой для Icinga (`icinga.example.com`). Далее будем работать с ними.
+
+Также выделим тестовый виртуальный хост (`example.com`), который в ходе дальнейшей настройки использовать не будем, но при помощи которого сможем комфортно проверять состояние сервера.
+
+Создадим директории для наших виртуальных хостов и установим права доступа:
+```bash
+sudo mkdir /srv/http/munin.example.com
+sudo chown -R http:http /srv/http/munin.example.com
+
+sudo mkdir /srv/http/icinga.example.com
+sudo chown -R http:http /srv/http/icinga.example.com
+
+sudo mkdir /srv/http/example.com
+sudo chown -R http:http /srv/http/example.com
+
+sudo chown -R http:http /srv/http
+sudo chmod 770 -R /srv/http
+```
+
+Раскомментирируем следующую директиву в `/etc/httpd/conf/httpd.conf`:
+
+```python
+Include conf/extra/httpd-vhosts.conf
+```
+
+А в `/etc/httpd/conf/extra/httpd-vhosts.conf` уберём предустановленные хосты (они там были записаны в качестве примера) и запишем свои новые:
+
+```python
+...
+
+# Имя сервера по умолчанию
+ServerName default
+
+# Виртуальный хост по умолчанию, ошибка 404
+<VirtualHost *:80>
+	ServerName default
+	Redirect 404 /
+</VirtualHost>
+
+# Тестовый виртуальный хост
+<VirtualHost *:80>
+    ServerAdmin webmaster@example.com
+    DocumentRoot "/srv/http/example.com"
+    ServerName example.com
+    ErrorLog "/var/log/httpd/example.com-error_log"
+    CustomLog "/var/log/httpd/example.com-access_log" common
+    <Directory "/srv/http/example.com">
+        Require all granted
+    </Directory>
+</VirtualHost>
+
+# Виртуальный хост для Munin
+<VirtualHost *:80>
+    ServerAdmin webmaster@munin.example.com
+    DocumentRoot "/srv/http/munin.example.com"
+    ServerName munin.example.com
+    ErrorLog "/var/log/httpd/munin.example.com-error_log"
+    CustomLog "/var/log/httpd/munin.example.com-access_log" common
+    <Directory "/srv/http/munin.example.com">
+        Require all granted
+    </Directory>
+</VirtualHost>
+
+# Виртуальный хост для Icinga
+<VirtualHost *:80>
+    ServerAdmin webmaster@icinga.example.com
+    DocumentRoot "/srv/http/icinga.example.com"
+    ServerName icinga.example.com
+    ErrorLog "/var/log/httpd/icinga.example.com-error_log"
+    CustomLog "/var/log/httpd/icinga.example.com-access_log" common
+    <Directory "/srv/http/icinga.example.com">
+        Require all granted
+    </Directory>
+</VirtualHost>
+```
+
+И отредактируем `/etc/hosts`, добавив в конец файла следующие директивы:
+```c
+127.0.0.1 munin.example.com
+127.0.0.1 icinga.example.com
+127.0.0.1 example.com
+```
+
+## 6. Проверим работоспособность PHP
+
+Запишем в директории виртуальных хостов два простейших PHP-скрипта, чтобы проверить их работоспособность:
+
+```bash
+echo '<?php echo "Hello, Munin!" ?>' > /srv/http/munin.example.com/index.php
+
+echo '<?php echo "Hello, Icinga!" ?>' > /srv/http/icinga.example.com/index.php
+
+echo "<?php phpinfo(); ?>" > /srv/http/example.com/index.php
+```
+
+>[!blank | alt]
+>![[Pasted image 20240116003004.png | center | 800]]
+>
+>Виртуальный хост Munin
+>
+>![[Pasted image 20240116003034.png | center | 800]]
+>
+>Виртуальный хост Icinga
+>
+>![[Pasted image 20240116003053.png | center | 800]]
+>
+>Тестовый виртуальный хост
+>
+![[Pasted image 20240116003115.png | center | 800]]
+>
+>Для всех прочих доменных имён по нашему IP - ошибка 404
+
+# Шаг 1. Развёртывание Munin
+
+## 1. Настройка клиента
+
+**Устанавливаем клиент**
+
+```bash
+sudo pacman -S munin-node
+```
+
+**Настраивает клиент.**
+
+Изменим конфигурацию клиента `/etc/munin/munin-node.conf`. По умолчанию Munin-клиент поставляется с уже почти работоспособной конфигурацией, осталось изменить совсем чуть-чуть.
+
+1\. Раскомментируем директиву `host_name` и укажем какое-нибудь имя. 
+
+Это имя будет использоваться сервером для идентификации клиентов (в нашем случае, в количестве одной штуки)
+
+```c
+host_name vbox-client
+```
+
+2\. Укажем, какие IP-адреса имеют право подключаться к нашему клиенту. Это должны быть IP-адреса серверов / сервера. 
+
+В нашем случае указано регулярное выражение, указывающее на localhost - по той причине, что у нас клиент и сервер находятся на одной системе. 
+
+И, на самом деле, эта строка уже присутствует в конфиге по умолчанию.
+
+```c
+allow ^127\.0\.0\.1$
+allow ^::1$
+```
+
+3\. Укажем сетевые настройки
+
+Эта строка тоже уже присутствует по умолчанию, но обязательно нуждается в упоминании.
+
+```c
+host *
+# host 127.0.0.1
+
+port 4949
+```
+
+Запустим сервис.
+
+```bash
+sudo systemctl enable munin-node
+sudo systemctl start munin-node
+```
+
+**Устанавливаем плагины на выбор.**
+
+Этот этап можно выполнить и позже, после настройки сервера. Однако:
+
+<span style="font-size: 1.2em; color: brown">ВНИМАНИЕ.</span> По умолчанию Munin-node поставляется с начальным набором плагинов, но все они отключены. Если у нас уже настроен сервер, а при запросе на клиенты он не получит ни одного графика, не знаю, как они это допустили, мы получим в итоге пустую директорию в виртуальном хосте и смотреть будет нечего. 
+
+Нет, правда, буквально нечего. Не покажет даже минимальный пользовательский интерфейс и не скажет фразу "у меня тут пока что пусто". Я долго разбирался с этим, не понимал, почему у меня не генерируются НИКАКИЕ HTML-страницы и думал, что что-то настроил неправильно.
+
+Причину данного поведения я понял только прочитав `/var/log/munin/munin-update.log` - и то далеко не сразу.
+
+Там я увидел следующее (согласен, не очень информативно):
+
+![[Pasted image 20240116024734.png]]
+
+В любом случае, если это произошло - НЕ ПУГАЕМСЯ. Это нормальное поведение и туда-сюда. Как только появятся данные - какие-то HTML-странички тоже появятся.
+
+Для просмотра списка доступных плагинов:
+
+```bash
+munin-node-configure --suggest
+```
+
+Как видим, он выводит информацию, использован ли какой-то из плагинов и рекомендуется ли его подключать. Если нет - сообщает причину.
+
+![[Pasted image 20240116024953.png]]
+
+Все плагины хранятся в директории `/usr/lib/munin/plugins`.
+Все подключенные плагины - в директории `/etc/munin/plugins`
+
+Если мы захотим скачать плагин из интернета - его тоже рекомендуется поместить в `/usr/lib/munin/plugins`, поскольку там `munin` будет знать о его существовании  и сможет, например, вывести при запросе списка плагинов.
+
+Для включения плагина создаётся символическая ссылка:
+
+```bash
+sudo ln -s /usr/lib/munin/plugins/PLUGIN /etc/munin/plugins/PLUGIN
+```
+
+Также, после включения плагина, можно протестировать его работу:
+
+```bash
+munin-run PLUGIN
+```
+
+![[Pasted image 20240116025535.png | center | 500]]
+
+
+Для выключения плагина символическая ссылка просто удаляется:
+
+```bash
+rm /etc/munin/plugins/PLUGIN
+```
+
+После подключения всех интересующих нас плагинов, следует перезапустить сервис:
+
+```bash
+sudo systemctl restart munin-node
+```
+
+![[Pasted image 20240116025735.png | center | 800]]
+
+## 2. Настройка сервера
+
+**Устанавливаем сервер.**
+
+```bash
+sudo pacman -S munin
+```
+
+**Настраиваем сервер.**
+
+Принцип работы Munin в периодическом опросе клиентов и получении данных. При этом Munin может работать в двух режимах:
+1. `cgi` -  данные запрашиваются, из них генерируются графики и выводятся клиенту ПО ТРЕБОВАНИЮ
+2. `cron` - системными средствами настраивается выполнение задачи, допустим, каждые 5 минут. Каждые 5 минут `munin` опрашивает клиентов, получает от них данные и формирует графики
+
+Мы будем настраивать munin в режиме `cron`, поскольку это банально проще. 
+
+Хотя, на самом деле, у этого подхода, по сравнению с cgi-подходом, есть как свои преимущества, так и недостатки - помимо простоты реализации. Например, вот что пишут разработчики в комментариях `munin.conf`:
+
+![[Pasted image 20240116023910.png | center | 700]]
+
+![[Pasted image 20240116023945.png | center | 700]]
+
+
+**Настроим сервер.**
+
+Изменим конфигурацию сервера `/etc/munin/munin.conf`
+
+1\. Укажем директорию вывода файлов
+
+```c
+# До изменения была следующая закомментированная строка
+# htmldir /srv/http/munin
+# В этой строке также было указано значение по умолчанию
+# Очевидно, значение по умолчанию нам никак не подходит
+htmldir /srv/http/munin.example.com
+```
+
+2\. Укажем адрес клиента, с которого будем собирать статистику
+
+```c
+# До изменения был [myhostname]
+[vbox-client]
+	address 127.0.0.1
+	use_node_name yes
+```
+
+3\. Прикажем формировать графики и HTML-странички в cron-режиме:
+
+```c
+graph_strategy cron
+
+...
+
+html_strategy cron
+```
+
+**Настроим права доступа.**
+
+Дадим Munin права на запись в директорию виртуального хоста путём добавления пользователя `munin` в группу `http`
+
+```bash
+usermod -a -G http munin
+```
+
+**Настроим периодическое обновление данных.**
+
+Сконфигурируем systemd-юнит, который будет запускать обновление данных:
+
+```bash
+# /etc/systemd/system/munin-cron.service
+
+[Unit]
+Description=Survey monitored computers
+After=network.target
+
+[Service]
+User=munin
+ExecStart=/usr/bin/munin-cron
+```
+
+Сконфигурируем systemd-таймер, который будет, допустим, раз в 5 минут запускать этот юнит:
+
+```bash
+# /etc/systemd/system/munin-cron.timer
+
+[Unit]
+Description=Survey monitored computers every five minutes
+
+[Timer]
+OnCalendar=*-*-* *:00/5:00
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Запустим таймер:
+
+```bash
+sudo systemctl enable munin-cron.timer
+sudo systemctl start munin-cron.timer
+```
+
+Если нам очень хочется не ждать, а получить обновление вот прям сейчас, может запустить юнит вручную, в обход таймера:
+
+```bash
+sudo systemctl start munin-cron.service
+```
+
+Прочитать логи и узнать, всё ли в порядке, можно следующими инструкциями:
+
+```bash
+sudo journalctl --unit munin-cron.service
+less /var/log/munin/munin-update.log
+```
+
+**Сконфигурируем виртуальный хост Apache.**
+
+Изменять конфигурацию виртуального хоста в нашем случае не требуется, поскольку мы настроили Munin именно что на периодическое обновление полностью статических файлов.
+
+В случае конфигурации в cgi-режиме, нам нужно было бы достаточно много настроить, в частности, включить модуль `fast-cgi` Apache-сервера, настроить обращения веб-сайта к cgi-скриптам и так далее.
+
+![[Pasted image 20240116031154.png | center | 800]]
+
+Также у нас была возможность настроить генерацию полностью статического HTML, но динамическое обновление графиков:
+
+![[Pasted image 20240116031418.png | center | 800]]
+
+Наш вариант, конечно, самый-самый простой. Но и приведённое више не рокет саенс. Если надо - разобраться можно. Приведённые в пример конфиги апача выглядят и ощущаются достаточно интуитивно.
+
+## 3. Проверим, как оно в итоге работает
+
+>[!blank | alt]
+>![[Pasted image 20240116031908.png | center | 800]]
+>
+>Веб-страница открывается
+>
+>![[Pasted image 20240116031935.png | center | 800]]
+>
+>И у нас даже успела собраться некая статистика
+
+## 4. Настройка аутентификации
+
+Совсем забыл про аутентификацию, которую тоже, по условию лабораторной работы, нужно настроить.
+
+Сам по себе Munin не предоставляет никакого функционала разделения ролей/аутентификации и прочего. Его дело просто - собирать данные и, так или иначе, генерировать странички.
+
+Поэтому настройка доступа производится средствами веб-сервера.
+
+Создадим htpasswd-файл следующим образом:
+
+```bash
+sudo htpasswd -c /path/to/file user-name
+```
+
+![[Pasted image 20240116032443.png | center | 900]]
+
+Его содержимое очень похоже на `/etc/passwd`, содержит имена пользователей и хеши паролей. Используется для базовой HTTP-аутентификации и легко добавляется в настройки виртуального хоста.
+
+![[Pasted image 20240116032634.png | center | 600]]
+
+Изменим конфигурацию виртуального хоста:
+
+```c
+<VirtualHost *:80>
+    ServerAdmin webmaster@munin.example.com
+    DocumentRoot "/srv/http/munin.example.com"
+    ServerName munin.example.com
+    ErrorLog "/var/log/httpd/munin.example.com-error_log"
+    CustomLog "/var/log/httpd/munin.example.com-access_log" common
+    <Directory "/srv/http/munin.example.com">
+        # CHANGES HERE:
+        Require valid-user
+        AuthType Basic
+        AuthName "Munin"
+        AuthUserFile "/etc/munin/munin-htpasswd"
+    </Directory>
+</VirtualHost>
+```
+
+И не забудем перезапустить Apache-сервер. :)
+
+Проверим: 
+
+![[Pasted image 20240116033630.png | center | 800]]
+
+![[Pasted image 20240116033645.png | center | 800]]
+
+
+
+# Шаг 2. Развёртывание Icinga
+
+## 1. Установка Icinga
+
+Установим Icinga:
+
+```bash
+yay -S icinga2
+```
+
+Установим веб-интерфейс Icinga Web 2:
+
+```bash
+yay -S icingaweb2 
+# Модуль 
+yay -S icingaweb2-module-director
+```
+
+Запустим Icinga:
+
+```bash
+sudo systemctl enable icinga2
+sudo systemctl start icinga2
+
+sudo systemctl 
+```
+
+## 2. Настроим права доступа
+
+Нужно для того, чтобы можно было изменять конфигурационные файлы из веб-приложения напрямую.
+
+```bash
+sudo usermod -a -G icingaweb2 http
+```
+
+## 3. Настроим виртуальный хост
+
+Я настраивал в соответствии с найденным в документации [примером](https://icinga.com/docs/icinga-web/latest/doc/20-Advanced-Topics/). Если прямо очень-очень вкратце - мы здесь говорим серверу брать файлы в директории `/usr/share/webapps/icingaweb2/public`. Это и логично. В пакете `icingaweb2` уже идёт преднастроенный веб-сайт, и его нужно только правильно подключить.
+
+```c
+<VirtualHost *:80>
+  ServerName icinga.example.com
+  ServerAdmin webmaster@icinga.example.com
+
+  ErrorLog "/var/log/httpd/icinga.example.com-error_log"
+  CustomLog "/var/log/httpd/icinga.example.com-access_log" common
+
+  ## Vhost docroot
+  # modified for Icinga Web 2
+  DocumentRoot "/usr/share/webapps/icingaweb2/public"
+
+  ## Rewrite rules
+  RewriteEngine On
+
+  <Directory "/usr/share/webapps/icingaweb2/public">
+      Options SymLinksIfOwnerMatch
+      AllowOverride None
+
+      <IfModule mod_authz_core.c>
+          # Apache 2.4
+          <RequireAll>
+              Require all granted
+          </RequireAll>
+      </IfModule>
+
+      <IfModule !mod_authz_core.c>
+          # Apache 2.2
+          Order allow,deny
+          Allow from all
+      </IfModule>
+
+      SetEnv ICINGAWEB_CONFIGDIR "/etc/icingaweb2"
+
+      EnableSendfile Off
+
+      <IfModule mod_rewrite.c>
+          RewriteEngine on
+          # modified base
+          RewriteBase /
+          RewriteCond %{REQUEST_FILENAME} -s [OR]
+          RewriteCond %{REQUEST_FILENAME} -l [OR]
+          RewriteCond %{REQUEST_FILENAME} -d
+          RewriteRule ^.*$ - [NC,L]
+          RewriteRule ^.*$ index.php [NC,L]
+      </IfModule>
+
+      <IfModule !mod_rewrite.c>
+          DirectoryIndex error_norewrite.html
+          ErrorDocument 404 /error_norewrite.html
+      </IfModule>
+  </Directory>
+</VirtualHost>
+```
+
+## 4. Настроим PHP
+
+Для работы Icinga Web 2 нужны некоторые модули PHP, которые по умолчанию могут быть отключены. В связи с этим при попытке захода на веб-панель мы увидим ошибки `Module not found` или что-то в этом духе.
+
+Отредактируем файл `/etc/php/php.ini`, раскомментировав подключение следующих модулей:
+
+```ini
+;example:
+;extension=module_name
+curl 
+gettext
+pdo_mysql - нужен для работы с БД
+intl - нужен для Icinga Web 2
+sockets - нужен для Director
+```
+
+Также, даже после подключения всех этих модулей, я всё ещё получал ошибки. Как выяснилось, для работы модуля intl нужна была ещё какая-то динамическая библиотека, которая уже была в системе, но слегка старой версии. Помогло обновление системы:
+
+```bash
+sudo pacman -Syu
+```
+
+Вообще, можно было обновить только целевой пакет - но я уже не владею его названием.
+
+## 5. Сконфигурируем
+
+Перед этим перезагрузим Apache.
+
+![[Pasted image 20240116050417.png | center]]
+
+Как видим, Icinga развернулась успешно - осталось только сконфигурировать.
+
+![[Pasted image 20240116050655.png]]
+
+![[Pasted image 20240116050906.png]]
+
+![[Pasted image 20240116050924.png]]
+
+![[Pasted image 20240116051321.png]]
+
+![[Pasted image 20240116051841.png]]
+
+![[Pasted image 20240116052530.png]]
+
+![[Pasted image 20240116052559.png]]
+
+![[Pasted image 20240116052648.png]]
+
+![[Pasted image 20240116052719.png]]
+
+![[Pasted image 20240116053108.png]]
+
+![[Pasted image 20240116053216.png]]
+
+![[Pasted image 20240116053759.png]]
+  %% 
+![[Pasted image 20240116054430.png]]
+
+![[Pasted image 20240116054531.png]]
+
+![[Pasted image 20240116054544.png]]
+
+![[Pasted image 20240116055953.png]]
+
+![[Pasted image 20240116060607.png]] %%  

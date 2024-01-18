@@ -1,0 +1,72 @@
+![[Lab02_linux.pdf]]
+
+---
+
+0. Подтверждение, что я могу написать текст в nano:<br>![[Screenshot_20230925_205123.png]]
+
+1. Стандартные утилиты и их назначение. Описания из man pages:<br>
+	1. **cat** - concatenate files and print on the standard output
+	2. **clear** - clear the terminal screen
+	3. **cp** - copy files and directories
+	4. **date** - print or set the system date and time
+	5. **file** - determine file type
+	6. **head** - output the first part of files
+	7. **tail** - output the last part of files
+	8. **ls** - list directory contents
+	9. **man** - an interface to the system reference manuals
+	10. **mkdir** - make directories
+	11. **apropos** - search the manual page names and descriptions
+	12. **more** - display the contents of a file in a terminal
+	13. **less** - opposite of more
+	14. **mv** - move (rename) files
+	15. **pwd** - print name of current/working directory
+	16. **cd** - change the working directory
+	17. **rm** - remove files or directories
+	18. **rmdir** - remove empty directories
+	19. **wc** - print newline, word, and byte counts for each file
+	20. **find** - search for files in a directory hierarchy
+	21. **grep** - print lines that match patterns
+	22. **sort** - sort lines of text files
+	23. **type** - write a description of command type
+	24. **which** - shows the full path of (shell) commands
+<br>
+2. Пример использования объединения команд с помощью операторов ; || &&
+	``` bash
+	# Последовательный вывод двух слов
+	echo "hello"; echo "world"
+	# Вывести сообщение только если файл существует
+	test -f /tmp/some_file && echo "file exists"
+	# Выполнить команду и, если она завершилась с ошибкой, сообщить код завершения
+	false || echo "error code $?"
+	```
+3. shutdown с относительным временем отключения (10 минут) с выводом сообщения
+	``` bash
+	shutdown -r +10 "Reason: you like to reboot computers"
+	```
+4. Single user mode
+   <br>
+	1. Для входа в режим обслуживания в загрузчике grub отредактировать параметры запуска ядра. Найти строчку, начинающуюся с "linux". В ней заменить режим работы с файловой системой с "ro" на "rw". Далее добавить "init=/bin/bash"
+	   <br>
+	2. Второй способ в том, чтобы переключить runlevel, см. задание 6 
+		`systemctl isolate rescue.target` или `systemctl isolate emergency.target`
+		<br>
+	1. Для выхода из режима обслуживания можно перезагрузить компьютер и далее загрузиться с параметрами ядра по умолчанию. Можно воспользоваться комбинацией клавиш Ctrl+Alt+Del
+	   <br>
+	2. Для того, чтобы продолжить загрузку системы в многопользовательском режиме, можно также вручную запустить систему инициализации. Т. е. ввести команду: 
+	   `exec /sbin/init`
+   <br>
+5. Способы корректного завершения работы
+   <br>
+	1. Утилита `shutdown` и ключи `--halt`, `--poweroff`, `--reboot`.
+	   <br>
+	2. Утилиты `halt`, `poweroff`, `reboot` - возможно, эквивалентно п. 1
+	   <br>
+	3. Сообщить init'у перейти на тот или иной уровень работы (run level). 
+		> 		"Runlevels" are an obsolete way to start and stop groups of services used in SysV init. systemd provides a compatibility layer that maps runlevels to targets, and associated binaries like **runlevel**. Nevertheless, only one runlevel can be "active" at a given time, while systemd can activate multiple targets concurrently, so the mapping to runlevels is confusing and only approximate. Runlevels should not be used in new code, and are mostly useful as a shorthand way to refer the matching systemd targets in kernel boot parameters.
+
+1. Способы переключения run level's<br>
+		1. `runlevel` - команда, использующаяся в sysvinit<br>`runlevel 0` - завершение работы; `runlevel 6` - перезагрузка.<br>
+		2. `systemctl isolate run-level.target` - подход systemd. 
+		   Команда `isolate` завершает все активные цели и запускает указанную вместе с её зависимостями. Существуют цели, соответствующие тому или иному run level.  
+		   ![[Pasted image 20230925220516.png]]
+		   

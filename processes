@@ -1,0 +1,306 @@
+![[Lab04_linux.pdf]]
+
+---
+
+1. Типы процессов:
+	1. Интерактивные процессы
+		1. Переднего плана (foreground)
+		2. В фоновом режиме (background)
+	2. Пакетные процессы
+	3. Процессы-демоны
+	   <br>
+2. Утилиты для управления интерактивными процессами:
+   <br>
+	1. `jobs` - просмотр фоновых процессов
+		1. `jobs` - View jobs spawned by the current shell
+		2. `jobs -l` - List jobs and their process IDs
+		3. `jobs -n` - Display information about jobs with changed status
+		4. `jobs -p` - Display only process IDs
+		5. `jobs -r` - Display running processes
+		6. `jobs -s` - Display stopped processes
+		<br>
+	2. `fg` - продолжение замороженного процесса с переносом в передний план
+		1. `fg` - Bring most recently suspended or running background job to foreground
+		2. `fg %job_id` - Bring a specific job to foreground
+	<br>   
+	3. `bg` - продолжение замороженного процесса с продолжением работы в фоновом режиме
+		1. `bg` - Resume the most recently suspended job and run it in the background
+		2. `bg %job_id` - Resume a specific job (use `jobs -l` to get its ID) and run it in the background
+		   <br>
+	4. `disown` - позволяет открепить фоновый процесс от текущего терминального окна. Отправить, так сказать, в свободное плавание. _Почти_ превратить в демона
+		1. `disown` - Disown the current job
+		2. `disown %job_number` - Disown a specific job
+		3. `disown -a` - Disown all jobs
+		4. `disown -h %job_number` - Keep job (do not disown it), but mark it so that no future SIGHUP is received on shell exit
+	   <br>
+1. Интерактивное задание 1
+	```bash
+	nano        # Запустится редактор nano
+	<Ctrl+Z>    # Отправится SIGSTOP, который заморозит процесс
+	bg %1       # Продолжение работы в фоне
+	fg %1       # Выведение процесса в foreground, на экране появится nano
+	<Ctrl+C>    # Отправится SIGKILL, который завершит процесс
+	```
+	
+4. Основные утилиты для управления процессами и их приоритетом
+   <br>
+	1. `top` - display Linux processes (updating monitor)
+	   
+		1. `-d (--delay) secs` - delay between screen updates
+		2. `-u (--filter-only-user) UID/username`- only processes with a user id or user name matches the given
+		3. `-p (--pid) pid1,pid2,pid3,...` - only processes with specified process ID
+		4. `-n (--iterations) number` - maximum number of update iterations before ending
+		5. `-b (--batch)` - start in Batch mode, useful for sending outpt to other program or to a file. Not intercative
+		6. `-O (--list-fields) field1,field2,...` - output only specified fields
+		7. `-o (--sort-override) (+ or -)field` - specifies name of field on which tasks will be sorted
+		8. `-H (--threads-show)` - display individual threads instead of whole process that is summary of all it's threads
+		   <br>
+	2. `ps` - display Linux processes (as snapshot)
+			<br>
+		1. Options
+			1. **Simple selection**
+				1. `a` - list all processes with a terminal
+				2. `x` - list all processes owned by you
+				3. `ax` - list ALL processes
+				<br>   
+			2. **Process selection**
+				1. Select by real user ID or name:
+				   `-U (--User) userlist`
+				2. Select by effective user ID or name:
+				   `U (-u / --user) userlist`
+				3. Select by real GID or name:
+				   `-F (--Group) grplist`
+				7. Select by session or effective GID or name:
+				   `-g (--group) grplist`
+				4. Select by process ID:
+				   `p (-q / --pid) pidlist`
+				5. Select by parent process ID:
+				   `--ppid pidlist`
+				6. Select by TTY:
+				   `t (-t / --tty)`
+				<br>
+			3. **Output format** (select one)
+				1. `u` - user-oriented format
+				2. `o` - user-defined format
+				   Next you need to specify entries, ex.:
+				   `ps  xao pid,ppid,pgid,sid,comm`
+				3. `j` - BSD job control format 
+				4. `s` - display signal format
+				<br>
+			1. **Output modifiers**
+				1. `f` - ASCII process hierarchy (forest)
+				2. `e` - show the environment after the command
+				3. `k (--sort)` - sorting order
+				   `ps axk comm o comm,args`
+				   `ps kstart_time -ef`
+				   `ps jax --sort=uid,-ppid,+pid`
+				1. `--no-headers` - no header
+				   <br>
+			5. **Threads**
+				1. `H` - show threads as if they were processes
+				2. `m` - show threads after processes
+				<br>
+		2. **Examples**
+			1. See every process on the system
+			   `ps aux`
+			2. Print a process tree
+			   `ps axjf`
+			3. Get info about threads
+			   `ps axms`
+			4. Get security info
+			   `ps axZ`
+			   `ps -eM`
+			   `ps axo euser,ruser,suser,fuser,f,comm,label`
+			5. Every process running as root
+			   `ps -U root -u root u`
+			6. Print only the name of PID 42
+			   `ps -q 42 -o comm=` - with no header
+			   `ps -q 42 -o comm=command` - with renamed header
+		   <br>
+	1. `nice` - execute program with a custom scheduling priority
+		1. Print current niceness:
+		   `nice`
+		2. Run COMMAND with an adjusted niceness (from -20 (most) to 19 (least)):
+		   `nice -n (--adjustment) 10 COMMAND`
+		   <br>
+	2. `renice` - alter priority of running processes
+		1. **Relative or absolute:**
+		   `-n priority` - set absolute OR relative priority 
+		   (absolute by default, set POSIXLY_CORRECT to make it relative)
+		   `--priority priority` - set absolute priority
+		   `--relative priority` - set relative priority
+		3. Change priority **of a running process**:
+		   `renice -n niceness_value -p (--pid) pid`
+		4. Change priority of all processes **owned by a user**:
+		   `renice -n niceness_value -u (--user) user`
+		5. Change priority of all processes that **belong to a process group**:
+		   `renice -n niceness_value -g (--pgrp) process_group`
+		   <br>
+	3. `kill` - send specified SIGNAL to the specified processes (or groups)
+		1. Options
+			1. `-s (--signal)` - the signal to send (name or number)
+			2. `-l (--list) [number]` - print a list of signal names / convert signal number to a name
+		2. Examples
+		   <br>
+			1. Terminate a program using the default SIGTERM (terminate) signal:
+			   `kill process_id`
+			   <br>
+			2. List available signal names (to be used without the `SIG` prefix):
+			   `kill -l`
+			   <br>
+			3. Terminate a background job:
+			   `kill %job_id`
+			   <br>
+			4. Terminate a program using the SIGHUP (hang up) signal. Many daemons will reload instead of terminating:
+			   `kill -1|HUP process_id`
+			   <br>
+			5. Terminate a program using the SIGINT (interrupt) signal. This is typically initiated by the user pressing Ctrl+Alt+Z:
+			   `kill -2|INT process_id`
+			   <br>
+			6. Signal the operating system to immediately terminate a program (which gets no chance to capture the signal):
+			   `kill -9|KILL process_id`
+			   <br>
+			7. Signal the operating system to pause a program until a SIGCONT ("continue") signal is received:
+			   `kill -17|STOP process_id`
+			   <br>
+			8. Send a `SIGUSR1` signal to all processes with the given GID (group id):
+			   `kill -SIGUSR1 -group_id`
+		   <br>
+1. Дополнительные утилиты для управления процессами 
+   <br>
+	1. `vmstat` - report information about processes, memory, paging, block IO, traps, disks and CPU activity
+		<br>
+	1. `free` - display amount of free and used memory in the system
+		1. Display system memory:
+		   `free`
+		2. Display memory in Bytes/KB/MB/GB:
+		   `free -b|k|m|g`
+		3. Display memory in human-readable units:
+		   `free -h`
+		4. Refresh the output every 2 seconds:
+		   `free -s 2` 
+	   <br>
+	3. `uptime` - tell how long the system has been running and other
+		1. Print current time, uptime, number of logged-in users and other information:
+		   `uptime`
+		2. Show only the amount of time the system has been booted for:
+		   `uptime --pretty`
+		3. Print the date and time the system booted up at:
+		   `uptime --since`
+			<br>
+	1. `pgrep` - find or signal processes by name.
+		1. Return PIDs of any running processes with a matching command string:
+		   `pgrep process_name`
+		2. Search for processes run by a specific user:
+		   `pgrep --euid root process_name`
+		3.  Search for processes including their command-line options:
+		   `pgrep --full "process_name parameter"`
+		    <br>
+	5. `iostat`
+	    <br>
+	6. `dstat`
+	   <br>
+	7. `strace` - troubleshooting tool for tracing system calls.
+		<br>
+		1. Start tracing a specific process by its PID: 
+		   `strace -p pid`
+		<br>
+		2. Trace a process and filter output by system call:
+		   `strace -p pid -e system_call_name`
+		<br>
+		3. Count time, calls, and errors for each system call and report a summary on program exit:
+		   `strace -p pid -c`
+		<br>
+		4. Show the time spent in every system call:
+		   `strace -p pid -T`
+		<br>
+		5. Start tracing a program by executing it:
+		   `strace program`
+		<br>   
+		6. Start tracing file operations of a program:
+		   `strace -e trace=file program`
+		   <br>
+1. Задания
+   <br>
+	1. При помощи команды ps определить:
+	   <br>
+		1. Количество процессов, работающих из pts
+		   `ps axo tty | grep pts | wc -l`
+		   <br>
+		2. Процесс, который больше всего использовал процессорного времени системы
+		   `ps axo comm --sort -cputimes --no-header | head --lines 5`
+		   <br>
+		3. Количество процессов в состоянии D (что за состояние?)
+		   `ps axo s | sort | uniq -c` - 
+		   ![[Pasted image 20230926182942.png]]
+		   <br>
+		   
+	2. Что будет выполнять top при следующих параметрах?
+		1. `top -d 5` - обновлять каждые {bash}`bash` 5 секунд
+		2. `top -u user` - процессы пользователя user
+		3. `top -p 1024,2048,4096` - процессы с PID 1024, 2048 и 4096
+		4. `top -n 10` - 10 итераций обновления, далее закрыть 
+		5. `top -b -n 12000 > somefile` - в пакетном режиме вывести в файл 12000 итераций
+		<br>
+	1. Как будет вести себя команда top в интерактивном режиме, если
+		```bash
+			<Shift+N> # Сортировка по PID
+			<Shift+P> # Сортировка по $CPU
+			<Shift+M> # Сортировка по %MEM (процент занимаемой ОЗУ)
+			<Shift+T> # Сортировка по TIME+ (аптайм процесса)
+			d         # Изменяет delay
+			=         # Убирает ограничения, что показывать
+			u         # Процессы только указанного пользователя
+			n         # Количество задач отображаеммых за один раз
+			K         # Ввести сначала PID, потом SIGNAL - и послать
+		```
+	
+	4. Какую информацию можно извлечь из /proc вручную и каким образом? Привести пример получения информации о распределении памяти для процесса и используемых им динамических библиотеках
+	   <br>
+	   1. Получить информацию можно, в целом, любую. 
+	   2. `/proc` - это виртуальная ФС. Содержит информацию о процессах, памяти, монтированных устройствах, конфигурации железа и так далее.
+	   3. Получить информацию можно банально в текстовом виде, например, при помощи утилиты cat или перенаправив поток в файл
+	   4. Информация о распределении памяти процесса:
+	      `cat /proc/PID/statm`
+	      ![[Pasted image 20230926190926.png | 400]]
+	      ![[Pasted image 20230926190910.png]]
+	      <br>
+	   5. Динамические библиотеки процесса:
+	      `cat /proc/PID/maps`
+	   <br>
+	5. Чем может быть полезна команда `uptime`?
+	   <br>
+	   1. Может быть полезна, поскольку помимо uptime выводит также информацию о средней утилизации ресурсов, что может говорить об уровне загруженности сервера. Как один из вариантов.
+	      <br>
+	   2. Также, если говорить не только о команде uptime, но также о псевдофайле `/proc/uptime`, то эту информацию можно использовать для скриптинга
+	      <br>
+	   3. Также информацию об аптйме можно использовать для построения некой аналитики работы сервера.
+	   <br>
+	6. Проверить действие команды `kill` с разными сигналами<br>
+	   1. SIGSTOP - заморозил процесс, аналогично Ctrl+Z
+	   2. SIGCONT - разморозил и продолжил выполнение, аналогично `fg`
+	   3. SIGINT - послал сигнал выключения
+	   4. SIGKILL - прям жёстко убил процесс
+	<br>
+	1. Что произойдёт при вызове `kill -1 [PID_демона]`?
+	  Демону посылается сигнал SIGHUP. 
+	  Какие-то процессы его игнорируют, какие-то обрабатывают. Часто это уведомление о каком-то важном событии.
+	  Демоны обычно воспринимают это как сигнал о необходимости перезагрузки. 
+	   <br>
+	8. Какому сигналу соответствует номер 1? Как это узнать при помощи команды kill не обращаясь к заголовочным файлам?
+	   `kill -l 1 # HUP`
+	   <br>
+	9. Назначение и ключи, которые принимает strace?<br>
+	   Позволяет отслеживать выполнение системных вызовов программами. 
+	   https://habr.com/ru/companies/badoo/articles/493856/<br>
+	   Командных аргументов много, основные:<br><br>
+		   1. Запуск процесса и присоединение к нему (указать путь как последний аргумент)
+	   1. Присоединение к процессу на лету по PID `-p PID`
+	   2. Вывод трассировочной информации в файл `-ofilename`
+	   3. Выбор, за какими вызовами следить `-e trace=write`
+	   4. Выбор, какие вызовы игнорировать `-e trace=\!brk,mmap,mprotect,munmap`
+	   5. Отслеживание системных вызовов процессов-потомков `-f`
+	   6. Отображение файловых дескрипторов как пути файлов `-y`
+	   7. Выводить только обращение процесса к указанному файлу `-P/path` 
+	   8. Инъекция ошибок `-e inject=write:error=EBADF:when=2` второе обращение
+	   9. Инъекция ошибок `-e inject=file:error=ENOENT` ломает обращения к файлу указанному через `-P`

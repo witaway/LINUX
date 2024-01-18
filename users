@@ -1,0 +1,171 @@
+---
+title:
+---
+
+![[Lab03_linux.pdf]]
+
+---
+
+1. Основные команды касательно вывода информации о пользователях
+   <br>
+	1. **logname** - print user´s login name
+	   
+	2. **whoami** - print effective user name 
+	   Print the user name associated with the current effective user ID.  Same as id -un
+	   
+	3. **id** - print real and effective user and group IDs 
+	   Print user and group information for each specified USER, or (when USER omitted) for the current process
+	   
+	4. **who** -  show who is logged on
+	   Print information about users who are currently logged in.
+	   
+	5. **users** - print the user names of users currently logged in to the current host
+	   Output  who  is  currently  logged  in  according  to  FILE.  If FILE is not specified, use `/var/run/utmp`.
+	   
+	6. **finger** - displays information from several fields of a user's /etc/passwd entry
+		Примечание: во многих дистрибутивах linux данная утилита отсутствует, вместо неё установлена `pinky`. Выполняет ту же самую функцию. Считается более современной и легковесной. Честно говоря, мне решительно непонятно, что может быть не легковесного в такой утилите. Включена в GNU Coreutils.
+
+	7. **last, lastb** - show a listing of last logged in users
+   <br>
+1. При помощи каких команд выше можно узнать группы пользователя?
+	   <br>
+	1. `id` с ключом -G (-n для отображения названий вместо GID)<br>![[Pasted image 20230925223622.png]]
+	   <br>
+	2. `groups`<br> ![[Pasted image 20230925224111.png]]
+	   <br>
+3. Основные команды управления учётными записями
+	   <br>
+	1. `useradd [-d /catalogue -s shell -u uid -c "comments" -g group -G grops -m /template] username` - создание пользовательской учётной записи
+	   Примеры:<br>
+		1. `useradd --shell path/to/shell username` - Create a new user with the specified shell
+		2. `useradd --system username` - Create a new system user without the home directory
+	   <br>
+	2. `usermod [-d /newcatalogue -l newusername -s newshell -g newgroup -G newgroups -L (lock) -U (unlock)]` - модификация пользовательской учётной записи
+		1. `usermod --login new_username username` - Change a username  
+		2. `usermod --uid id username` - Change a user id
+		3. `usermod --shell path/to/shell username` - Change a user shell:  
+		4. `usermod --append --groups group1,group2,... username`   - Add a user to supplementary groups  
+		5. `usermod --move-home --home path/to/new_home username` - Change a user home directory  
+	   <br>
+	3. `chfn [-f new-full-name -o new-office -p new-office-phone -h new-home-phone] username` - модификация finger-информации о пользователе
+	   <br>
+	4. `chsh` - изменение login-shell:
+		1. `chsh -s path/to/shell` - Set a specific login shell for the current user
+		2. `chsh -s path/to/shell username` Set a login shell for a specific user
+		3. `chsh -l` - list available shells
+   <br>
+	1. `chage` - изменение информации о датах истекания паролей
+		1. `chage --list username` - List password information for the user
+		2. `chage --maxdays 10 username` - Enable password expiration in 10 days
+		3. `chage --maxdays -1 username` - Disable password expiration
+		4. `chage --expiredate YYYY-MM-DD username` - Set account expiration date
+		5. `chage --lastday 0 username` - Force user to change password on next log in
+		   <br>
+	6. `userdel` - удаление учётной записи пользователя
+		1. `userdel username` - Remove a user
+		2. `userdel --root path/to/other/root username` - Remove a user in other root directory
+		3. `userdel --remove username` - Remove a user along with the home directory and mail spool
+		   <br>
+4. Основные команды управления группами
+   <br>
+   1. `groups [username1 username2]` - вывод списка групп текущего/указанных пользователей
+      <br>
+   2. `groupadd [--gid GID --password password --system --root /chroot_dir --users username1,username2] groupname` - создание новой группы
+       <br>
+   3. `groupmod [--new-name new_group_name --gid new_gid --password new_password --root /chroot_dir (--append) --users username1,username2,...] groupname` - модификация группы
+      <br>
+   4. `groupdel -f (--force) -R (--root) /chroot_dir groupname` - удаление группы
+<br>
+5. Интерактивное задание
+   <br>
+	1. Настроить системную папку-скелет для профиля Morfeus
+		```bash
+		echo "Red pill" | sudo tee /etc/skel/redpill
+		echo "Blue pill" | sudo tee /etc/skel/bluepill
+		```
+	
+	2. Создать папку-скелет для профиля mrSmith 
+		```bash
+		sudo mkdir /etc/matrix
+		sudo cp -r /etc/skel /etc/matrix
+		```
+	
+	3. Добавить в систему пользователей mrAnderson, Morfeus, Trinity, Dozer, mrSmith с соответвующими настройками
+		```bash
+		sudo useradd -c "Follow white rabbit, Neo\!" --create-home mrAnderson
+		sudo useradd --create-home Morfeus
+		sudo useradd -s /bin/zsh Trinity
+		sudo useradd Dozer
+		sudo useradd -c "Matrix agent" -s /bin/false --skel /etc/matrix --create-home mrSmith
+		```
+	
+	4. Изменить учётные записи mrAnderson, mrSmith
+		```bash
+		sudo usermod --login Neo --comment "You are chosen, Neo\!" --move-home --home /home/matrix mrAnderson
+		sudo usermod --comment "Matrix agent again" --shell /bin/bash mrSmith
+		```
+
+	5. Указать всем учётным записям домашний и рабочий телефоны
+		```bash 
+		sudo chfn -h "home 1" -p "office 1" Neo
+		sudo chfn -h "home 2" -p "office 2" Morfeus
+		sudo chfn -h "home 3" -p "office 3" Trinity
+		sudo chfn -h "home 4" -p "office 4" mrSmith
+		```
+	1. Заблокировать учётную запись mrSmith
+		```bash
+		sudo usermod --lock mrSmith
+		```
+	1. Удалить учётную запись Dozer
+		```bash
+		sudo userdel --remove Dozer
+		```
+	1. Создать группы hackers (Neo, Morfeus, Trinity) и agents (mrSmith)
+		```bash
+		sudo groupadd --users Neo,Morfeus,Trinity hackers
+		sudo groupadd --users mrSmith agents
+		```
+	1. Изменить название группы `hackers` на `rebels`
+		```bash
+		sudo groupmod --new-name rebels hackers
+		```
+	1. Почистить систему от этого мусора
+		```bash
+		# File system changes
+		sudo rm -rf /etc/matrix
+		sudo rm -f /etc/skel/redpill /etc/skell/bluepill
+		# Remove users and theirs home dirs
+		sudo userdel --remove mrAnderson
+		sudo userdel --remove Neo
+		sudo userdel --remove Morfeus
+		sudo userdel --remove Trinity
+		sudo userdel --remove mrSmith
+		# Delete automatically created users' groups
+		sudo groupdel mrAnderson
+		sudo groupdel Morfeus
+		sudo groupdel Trinity
+		sudo groupdel mrSmith
+		sudo groupdel Dozer
+		# Delete manually created users' groups
+		sudo groupdel rebels
+		sudo groupdel agents
+		```
+
+6. Дополнительные вопросы
+   <br>
+	1. **Какие ещё способы блокирования учётной записи пользователя Вы можете предложить?**
+	   1. `usermod -L username` - lock user account
+	   2. `chage -E0 username` - expire user account
+	   3. `usermod -s /sbin/nologin boby` - change shell to no login
+	      <br>
+	2. **Если это возможно, привести альтернативные использованию команды `usermod` способы изменения данных об учётных записях пользователей.**
+	   1. Изменить вручную файл `/etc/passwd`
+	   2. Часть опций есть в `passwd`
+	   3. Хз, я устал
+	   <br>
+7. Скриншоты
+   <br>
+   1. Выполнение всех указанных в отчёте команд
+      ![[Screenshot_20230926_105424.png]]
+   2. Попытка входа в аккаунт mrSmith после блокировки<br>
+	      ![[Pasted image 20230926105827.png]]

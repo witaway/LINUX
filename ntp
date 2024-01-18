@@ -1,0 +1,169 @@
+![[Pasted image 20240117021643.png]]
+
+---
+
+# 0. Настройка виртуальных машин
+
+Пусть у нас будет две виртуальные машины - сервер и клиент.
+1. Обе машины добавим в виртуальную сеть с DHCP-сервером. Чтобы могли друг с другом общаться.
+2. Сервер также получает виртуальный сетевой адаптер NAT, чтобы иногда ходить в интернет и обновлять время
+3. Клиент не получает ничего, чтобы не дай бог не сходил в инетрнет и не обновил время.
+
+Для создания виртуальной сети, удовлетворяющей нашим условиям, воспользуемся [[Lab 5 - Настройка iptables#1. Настройка сетевого адаптера ВМ|инструкцией из 5 лабораторной работы]].
+
+Также запретим VirtualBox автоматически обновлять время вирутальной машины. 
+
+Просмотреть список виртуальных машин:
+
+```bash:
+vboxmanage list vms
+```
+
+Запретить обновлять время:
+
+```bash:
+VBoxManage setextradata "<vm-name>" VBoxInternal/Devices/VMMDev/0/Config/GetHostTimeDisabled 1
+VBoxManage setextradata "<vm-name>" VBoxInternal/TM/TSCTiedToExecution 1
+```
+
+Не знаю, почему, но у меня время действительно перестало обновляться после того, как я ввёл эти команды именно с GUID виртуальной машины, а не именем. Либо дело было в том, что я после изменений не перезагрузил машину, а именно полностью выключил - а затем включил. Что-то из этих двух.
+
+Обратно разрешить обновлять время:
+
+```bash:
+VBoxManage setextradata "<vm-name>" VBoxInternal/Devices/VMMDev/0/Config/GetHostTimeDisabled 0
+```
+
+Также обратим внимание на то, что после выполнения команды для исполнения изменений в действие требуется перезагрузка виртуальной машины.
+
+Также, для чистоты дальнейшего эксперимента, рассинхронизируем на обоих системах время:
+
+```bash:
+sudo timedatectl set-ntp false
+sudo timedatectl set-time 10:00
+```
+
+# 1. Установим ntp
+
+При необходимости `ntp` можно установить следующим образом:
+
+```bash:
+sudo pacman -S ntp
+```
+
+Однако в моём дистрибутиве он уже установлен и используется модулем `timedatectl`.
+
+# 2. Узнаем локальные IP-адреса двух систем
+
+Одна машина у нас будет NTP-сервером с периодическим доступом к интернету и базовым серверам NTP. Другая машина будет настрена как самая обычная, но разрешим использовать для синхронизации только наш сервер.
+
+![[Pasted image 20240117025712.png | center | 600]]
+
+Серверная виртуальная машина. 
+Время сбито. NTP выключен.
+IP-адрес в сети: `10.10.10.2`
+
+![[Pasted image 20240117030032.png | center | 600]]
+
+Клиентская виртуальная машина.
+Время сбито. NTP выключен.
+IP-адрес в сети: `10.10.10.6`
+
+# 3. Ознакомимся с конфигурацией NTP "из коробки"
+
+Конфигурация NTP находится по пути `/etc/ntp.`
+
+```ini:/etc/ntp.conf
+# Please consider joining the pool:  
+#  
+#     http://www.pool.ntp.org/join.html  
+#  
+# For additional information see:  
+# - https://wiki.archlinux.org/index.php/Network_Time_Protocol_daemon  
+# - http://support.ntp.org/bin/view/Support/GettingStarted  
+# - the ntp.conf man page  
+  
+# Associate to Arch's NTP pool  
+server 0.arch.pool.ntp.org  
+server 1.arch.pool.ntp.org  
+server 2.arch.pool.ntp.org  
+server 3.arch.pool.ntp.org  
+  
+# By default, the server allows:  
+# - all queries from the local host  
+# - only time queries from remote hosts, protected by rate limiting and kod  
+restrict default kod limited nomodify nopeer noquery notrap  
+restrict 127.0.0.1  
+restrict ::1  
+  
+# Location of drift file  
+driftfile /var/lib/ntp/ntp.drift
+```
+
+Здесь всё довольно просто.
+1. Указывается список серверов для синхронизации
+2. Для всех подключений по умолчанию запрещаются любые модификации и взаимодействия с NTP-модулем, кроме получения текущего времени.
+3. Но для локального хоста разрешается всё.
+4. И ниже указывается путь до drift-файла. В нём хранятся смещения (погрешность) относительно настоящего времени.
+
+# 4. Конфигурируем сервер
+
+```ini:/etc/ntp.conf
+server 0.arch.pool.ntp.org
+server 1.arch.pool.ntp.org
+server 2.arch.pool.ntp.org
+server 3.arch.pool.ntp.org
+
+tos orphan 15
+
+restrict default kod limited nomodify nopeer noquery notrap
+restrict 127.0.0.1
+restrict ::1
+
+driftfile /var/lib/ntp/ntp.drift
+logfile /var/log/ntp.log
+```
+![[Pasted image 20240117034843.png | center | 600]]
+
+Что тут поменялось? Да ничего.
+Только добавили логгирование и переключили демон в режим раздачи:
+
+```
+tos orphan 15
+```
+
+`tos orphan` - значит переход в режим сервера. orphan означает даже в случае пропажи связи с серверами продолжать работу - и далее досинхронизироваться.
+
+`15` - это уровень страты в иерархии. 0 - первичные источники времени, 1 - первый по цепочке после 0-го, 2 - первый по цепочке после 1-го и так далее. Выбираем 15, поскольку ntp по умолчанию из доступных берёт сервер с наибольшей стратой, то есть самый локальный.
+
+# 5. Конфигурируем клиент
+
+```
+server 10.10.10.2
+  
+restrict default kod limited nomodify nopeer noquery notrap  
+restrict 127.0.0.1  
+restrict ::1  
+  
+driftfile /var/lib/ntp/ntp.drift
+```
+
+![[Pasted image 20240117032441.png | center | 600]]
+
+Что тут поменялось? Тоже немного. Убрал комментарии и заменил все сервера в списке на наш свойский.
+
+# 6. Проверяем работоспособность конфигурации
+
+Включим ntp-демон на обоих серверах:
+
+```bash:
+sudo systemctl enable ntpd
+```
+
+И перезагрузимся, чтобы оно там точно как-то зашуршало.
+
+А теперь реально, проверим рАбОтОсПоСоБнОсТь кОнФиГуРаЦиИ:
+
+![[Pasted image 20240118091042.png]]
+
+%% Заебок. %%
